@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class WatchlistPage extends StatefulWidget {
   @override
@@ -6,29 +8,65 @@ class WatchlistPage extends StatefulWidget {
 }
 
 class _WatchlistPageState extends State<WatchlistPage> {
-  List<String> _symbols = [];
+  List<Map<String, dynamic>> _symbols = [];
+  final TextEditingController _symbolController = TextEditingController();
+
+  Future<void> fetchSymbolData(String symbol) async {
+    try {
+      final response = await http.get(
+        Uri.parse('https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol.toUpperCase()}'),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          _symbols.add({
+            'symbol': symbol.toUpperCase(),
+            'price': data['lastPrice'],
+            'change': data['priceChangePercent'],
+          });
+        });
+      } else {
+        showErrorDialog('Symbol not found or API error.');
+      }
+    } catch (e) {
+      showErrorDialog('Error fetching data. Check your internet connection.');
+    }
+  }
 
   void _addSymbol(String symbol) {
-    setState(() {
-      if (!_symbols.contains(symbol)) {
-        _symbols.add(symbol);
-        print('Symbol added: $symbol'); // لاگ برای تست
-      } else {
-        print('Symbol already exists: $symbol'); // لاگ برای تست
-      }
-    });
+    if (symbol.isNotEmpty && !_symbols.any((item) => item['symbol'] == symbol.toUpperCase())) {
+      fetchSymbolData(symbol);
+    } else {
+      showErrorDialog('Symbol already exists or is invalid.');
+    }
   }
 
   void _removeSymbol(String symbol) {
     setState(() {
-      _symbols.remove(symbol);
-      print('Symbol removed: $symbol'); // لاگ برای تست
+      _symbols.removeWhere((item) => item['symbol'] == symbol.toUpperCase());
     });
   }
 
-  void _showAddSymbolDialog() {
-    final TextEditingController _symbolController = TextEditingController();
+  void showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Error'),
+          content: Text(message),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
+  void _showAddSymbolDialog() {
     showDialog(
       context: context,
       builder: (context) {
@@ -36,21 +74,20 @@ class _WatchlistPageState extends State<WatchlistPage> {
           title: Text('Add Symbol'),
           content: TextField(
             controller: _symbolController,
-            decoration: InputDecoration(hintText: 'Enter symbol (e.g., BTC)'),
+            decoration: InputDecoration(hintText: 'Enter symbol (e.g., BTCUSDT)'),
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
+              onPressed: () => Navigator.of(context).pop(),
               child: Text('Cancel'),
             ),
             ElevatedButton(
               onPressed: () {
-                final newSymbol = _symbolController.text.trim();
-                if (newSymbol.isNotEmpty) {
-                  _addSymbol(newSymbol);
+                final symbol = _symbolController.text.trim();
+                if (symbol.isNotEmpty) {
+                  _addSymbol(symbol);
                 }
+                _symbolController.clear();
                 Navigator.of(context).pop();
               },
               child: Text('Add'),
@@ -84,16 +121,21 @@ class _WatchlistPageState extends State<WatchlistPage> {
                       itemCount: _symbols.length,
                       itemBuilder: (context, index) {
                         final symbol = _symbols[index];
-                        return ListTile(
-                          title: Text(
-                            symbol,
-                            style: TextStyle(color: Colors.white),
-                          ),
-                          trailing: IconButton(
-                            icon: Icon(Icons.delete, color: Colors.red),
-                            onPressed: () {
-                              _removeSymbol(symbol);
-                            },
+                        return Card(
+                          margin: EdgeInsets.symmetric(vertical: 8.0),
+                          child: ListTile(
+                            title: Text(
+                              symbol['symbol'],
+                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                            ),
+                            subtitle: Text(
+                              'Price: \$${symbol['price']}\nChange: ${symbol['change']}%',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                            trailing: IconButton(
+                              icon: Icon(Icons.delete, color: Colors.red),
+                              onPressed: () => _removeSymbol(symbol['symbol']),
+                            ),
                           ),
                         );
                       },
@@ -101,9 +143,7 @@ class _WatchlistPageState extends State<WatchlistPage> {
             ),
             SizedBox(height: 10),
             ElevatedButton(
-              onPressed: () {
-                _showAddSymbolDialog();
-              },
+              onPressed: _showAddSymbolDialog,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.cyan,
               ),
